@@ -8,7 +8,8 @@ app.secret_key = 'your_secret_key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 db.init_app(app)
 
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='eventlet')
+
 
 # Dictionnaire pour stocker les parties, les joueurs, les problèmes et les votes
 games = {}
