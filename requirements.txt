@@ -9,3 +9,5 @@ packaging==24.1
 Werkzeug==3.0.6
 Flask-SocketIO
 eventlet
+Flask-SQLAlchemy
+
