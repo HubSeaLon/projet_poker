@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Connexion</title>
+</head>
+<body>
+    <h1>Connexion</h1>
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+    <form action="/login" method="POST">
+        <label for="pseudo">Pseudo :</label>
+        <input type="text" id="pseudo" name="pseudo" required>
+        <button type="submit">Se connecter</button>
+    </form>
+    <p>Pas encore inscrit ? <a href="{{ url_for('signup') }}">Créez un compte ici</a>.</p>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inscription</title>
+</head>
+<body>
+    <h1>Créer un compte</h1>
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+    <form action="/" method="POST">
+        <label for="pseudo">Entrez votre pseudo :</label>
+        <input type="text" id="pseudo" name="pseudo" required>
+        <button type="submit">S'inscrire</button>
+    </form>
+    <p>Déjà un compte ? <a href="{{ url_for('login') }}">Connectez-vous ici</a>.</p>
+</body>
+</html>
