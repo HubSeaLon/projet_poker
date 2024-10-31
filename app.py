@@ -160,4 +160,4 @@ def generate_unique_game_id():
             return game_id
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True)
+    socketio.run()
