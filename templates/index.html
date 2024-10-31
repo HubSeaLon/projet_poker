@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Configuration de la Partie</title>
+</head>
+<body>
+    <h1>Configurer le Planning Poker</h1>
+    <form method="POST" action="/">
+        <label for="num_players">Nombre de joueurs :</label>
+        <input type="number" name="num_players" min="1" max="10" required><br>
+
+        <div id="players">
+            <!-- Ajout de champs de pseudo pour les joueurs (JS peut gérer l'ajout dynamique si besoin) -->
+            <label for="player_0">Joueur 1 :</label>
+            <input type="text" name="player_0" required><br>
+            <label for="player_1">Joueur 2 :</label>
+            <input type="text" name="player_1" required><br>
+        </div>
+        
+        <label for="rule">Règle de jeu :</label>
+        <select name="rule">
+            <option value="strict">Unanimité</option>
+            <option value="average">Moyenne</option>
+            <option value="median">Médiane</option>
+            <option value="majority">Majorité absolue</option>
+        </select><br>
+        
+        <label for="backlog">Backlog (JSON) :</label>
+        <textarea name="backlog" required placeholder='[{"feature": "User login", "description": "Allows users to log in"}]'></textarea><br>
+
+        <button type="submit">Démarrer la Partie</button>
+    </form>
+</body>
+</html>
