@@ -52,6 +52,8 @@
         <ul id="votes-list"></ul>
     </section>
 
+    
+
     <script>
         const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         const gameId = "{{ game_id }}";
@@ -153,5 +155,13 @@
             alert("Le vote est terminé.");
         });
     </script>
+
+    <!-- Bouton pour lancer la partie (visible uniquement par l'hôte) -->
+{% if pseudo == host %}
+<section>
+    <button onclick="startGame()">Lancer la Partie</button>
+</section>
+{% endif %}
+
 </body>
 </html>
