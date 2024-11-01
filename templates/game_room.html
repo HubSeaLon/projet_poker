@@ -127,12 +127,18 @@
     
         function validateVote() {
             if (selectedVote !== null) {
-                socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: selectedVote, pseudo: pseudo});
-                selectedVote = null;
+                socket.emit("cast_vote", {
+                    game_id: gameId,
+                    problem: currentProblem,
+                    vote: selectedVote,
+                    pseudo: pseudo
+                });
+                selectedVote = null;  // Réinitialise le vote sélectionné après validation
             } else {
                 alert("Veuillez sélectionner un vote avant de valider.");
             }
         }
+
     
         socket.on("vote_cast", (data) => {
             const votesList = document.getElementById("votes-list");
@@ -140,6 +146,7 @@
             li.textContent = `${data.player} a voté : ${data.vote}`;
             votesList.appendChild(li);
         });
+
     
         socket.on("vote_ended", (data) => {
             const votesList = document.getElementById("votes-list");

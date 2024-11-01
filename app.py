@@ -136,8 +136,21 @@ def handle_cast_vote(data):
     # Enregistrer le vote pour le joueur et le problème
     games[game_id]["votes"][problem][pseudo] = vote
 
-    # Notifier tous les joueurs du vote
+    # Notifier tous les joueurs du vote enregistré pour ce joueur
     emit("vote_cast", {"player": pseudo, "vote": vote, "problem": problem}, room=game_id)
+
+    # Vérifier si tous les joueurs ont voté et si les votes sont unanimes
+    players = games[game_id]["players"]
+    all_votes = [games[game_id]["votes"][problem].get(player) for player in players]
+
+    if all(all_votes) and len(set(all_votes)) == 1:
+        # Si tous les votes sont unanimes, notifier tous les joueurs
+        unanimous_vote = all_votes[0]
+        emit("unanimous_vote", {"problem": problem, "result": unanimous_vote}, room=game_id)
+    elif all(all_votes):
+        # Si tous les joueurs ont voté, notifier de la fin des votes sans unanimité
+        emit("vote_ended", {"problem": problem, "votes": games[game_id]["votes"][problem]}, room=game_id)
+
 
 
 @app.route("/game_room/<game_id>")
