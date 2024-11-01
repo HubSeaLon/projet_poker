@@ -22,46 +22,46 @@
         </ul>
     </section>
 
-    <!-- Section de vote visible une fois la partie lancée -->
     <section id="game-section" style="display: none;">
         <h3>Problèmes</h3>
         <ul id="problems-list"></ul>
         <button onclick="addProblem()">+ Ajouter un problème</button>
 
-        <!-- Options de vote -->
+        <!-- Minuteur de vote -->
+        <h3>Temps restant pour voter : <span id="timer">60</span> secondes</h3>
+
+        <!-- Options de vote et bouton valider -->
         <h3>Voter pour le problème sélectionné</h3>
         <div id="vote-options">
-            <button onclick="castVote(0)">0</button>
-            <button onclick="castVote(0.5)">1/2</button>
-            <button onclick="castVote(2)">2</button>
-            <button onclick="castVote(3)">3</button>
-            <button onclick="castVote(5)">5</button>
-            <button onclick="castVote(8)">8</button>
-            <button onclick="castVote(13)">13</button>
-            <button onclick="castVote(20)">20</button>
-            <button onclick="castVote(40)">40</button>
-            <button onclick="castVote(100)">100</button>
-            <button onclick="castVote('?')">?</button>
+            <button onclick="selectVote(0)">0</button>
+            <button onclick="selectVote(0.5)">1/2</button>
+            <button onclick="selectVote(2)">2</button>
+            <button onclick="selectVote(3)">3</button>
+            <button onclick="selectVote(5)">5</button>
+            <button onclick="selectVote(8)">8</button>
+            <button onclick="selectVote(13)">13</button>
+            <button onclick="selectVote(20)">20</button>
+            <button onclick="selectVote(40)">40</button>
+            <button onclick="selectVote(100)">100</button>
+            <button onclick="selectVote('?')">?</button>
         </div>
-    </section>
+        <button onclick="validateVote()">Valider le vote</button>
 
-    <!-- Bouton pour lancer la partie (visible uniquement par l'hôte) -->
-    {% if pseudo == host %}
-    <section>
-        <button onclick="startGame()">Lancer la Partie</button>
+        <!-- Section pour afficher les votes des autres joueurs -->
+        <h3>Votes des autres joueurs</h3>
+        <ul id="votes-list"></ul>
     </section>
-    {% endif %}
 
     <script>
         const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
         const gameId = "{{ game_id }}";
         const pseudo = "{{ pseudo }}";
-        let currentProblem = "";  // Variable pour stocker le problème actuellement voté
+        let currentProblem = "";
+        let selectedVote = null;
+        let timerInterval;
 
-        // Rejoindre la salle de la partie
         socket.emit("join_room", {game_id: gameId, pseudo: pseudo});
 
-        // Mettre à jour la liste des joueurs en temps réel
         socket.on("update_players", (data) => {
             const playersList = document.getElementById("players-list");
             playersList.innerHTML = "";
@@ -75,12 +75,10 @@
             });
         });
 
-        // Fonction pour démarrer la partie
         function startGame() {
             socket.emit("start_game", {game_id: gameId});
         }
 
-        // Afficher la section de vote lorsque la partie commence
         socket.on("start_game", () => {
             document.getElementById("game-section").style.display = "block";
         });
@@ -97,56 +95,62 @@
             const li = document.createElement("li");
             li.textContent = data.problem;
 
-            // Ajouter un bouton "Voter pour ce problème" uniquement pour l'hôte
-            {% if pseudo == host %}
             const voteButton = document.createElement("button");
             voteButton.textContent = "Voter pour ce problème";
-            voteButton.onclick = () => selectProblem(data.problem);
+            voteButton.onclick = () => startVote(data.problem);
+
             li.appendChild(voteButton);
-            {% endif %}
-
-            // Ajouter un élément pour afficher le résultat
-            const resultSpan = document.createElement("span");
-            resultSpan.id = `result-${data.problem}`;
-            resultSpan.style.marginLeft = "10px";
-
-            li.appendChild(resultSpan);
             problemList.appendChild(li);
         });
 
-        // Fonction pour l'hôte pour sélectionner un problème à voter
-        function selectProblem(problem) {
+        function startVote(problem) {
             currentProblem = problem;
-            socket.emit("select_problem", {game_id: gameId, problem: problem});
+            socket.emit("start_vote", {game_id: gameId, problem: problem});
+            startTimer();
         }
 
-        // Notifie tous les joueurs du problème sélectionné
-        socket.on("problem_selected", (data) => {
-            currentProblem = data.problem;
-            alert(`L'hôte a choisi de voter pour le problème : ${data.problem}`);
-        });
-
-        // Fonction pour soumettre un vote pour le problème sélectionné
-        function castVote(vote) {
-            if (!currentProblem) {
-                alert("Aucun problème sélectionné pour le vote.");
-                return;
-            }
-            socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: vote, pseudo: pseudo});
+        function startTimer() {
+            let timeLeft = 60;
+            const timerDisplay = document.getElementById("timer");
+            timerDisplay.textContent = timeLeft;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                }
+            }, 1000);
         }
 
-        // Mise à jour des votes (non unanimes)
-        socket.on("update_votes", (data) => {
-            const problem = data.problem;
-            console.log(`Votes mis à jour pour ${problem}:`, data.votes);
+        function selectVote(vote) {
+            selectedVote = vote;
+        }
+
+        function validateVote() {
+            if (selectedVote !== null) {
+                socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: selectedVote, pseudo: pseudo});
+                selectedVote = null;
+            } else {
+                alert("Veuillez sélectionner un vote avant de valider.");
+            }
+        }
+
+        socket.on("vote_cast", (data) => {
+            const votesList = document.getElementById("votes-list");
+            const li = document.createElement("li");
+            li.textContent = `${data.player} a voté : ${data.vote}`;
+            votesList.appendChild(li);
         });
 
-        // Afficher le résultat unanime pour le problème
-        socket.on("unanimous_vote", (data) => {
-            const resultSpan = document.getElementById(`result-${data.problem}`);
-            if (resultSpan) {
-                resultSpan.textContent = `Résultat unanime : ${data.result}`;
-            }
+        socket.on("vote_ended", (data) => {
+            const votesList = document.getElementById("votes-list");
+            votesList.innerHTML = "";
+            Object.keys(data.votes).forEach(player => {
+                const li = document.createElement("li");
+                li.textContent = `${player} a voté : ${data.votes[player]}`;
+                votesList.appendChild(li);
+            });
+            alert("Le vote est terminé.");
         });
     </script>
 </body>
