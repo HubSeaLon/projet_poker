@@ -192,7 +192,9 @@ def handle_cast_vote(data):
 def handle_select_problem(data):
     game_id = data["game_id"]
     problem = data["problem"]
+    # Diffuse à tous les joueurs dans la salle l’information du problème sélectionné
     emit("problem_selected", {"problem": problem}, room=game_id)
+
 
 
 def generate_unique_game_id():

@@ -61,9 +61,10 @@
         let currentProblem = "";
         let selectedVote = null;
         let timerInterval;
-
+    
+        // Rejoindre la salle de la partie
         socket.emit("join_room", {game_id: gameId, pseudo: pseudo});
-
+    
         socket.on("update_players", (data) => {
             const playersList = document.getElementById("players-list");
             playersList.innerHTML = "";
@@ -76,42 +77,83 @@
                 playersList.appendChild(li);
             });
         });
-
+    
         function startGame() {
             socket.emit("start_game", {game_id: gameId});
         }
-
+    
         socket.on("start_game", () => {
             document.getElementById("game-section").style.display = "block";
         });
-
+    
         function addProblem() {
             const problem = prompt("Entrez un nouveau problème :");
             if (problem) {
                 socket.emit("add_problem", {game_id: gameId, problem: problem});
             }
         }
-
+    
         socket.on("new_problem", (data) => {
             const problemList = document.getElementById("problems-list");
             const li = document.createElement("li");
             li.textContent = data.problem;
-
+    
+            {% if pseudo == host %}
             const voteButton = document.createElement("button");
             voteButton.textContent = "Voter pour ce problème";
-            voteButton.onclick = () => startVote(data.problem);
-
+            voteButton.onclick = () => selectProblem(data.problem);
             li.appendChild(voteButton);
+            {% endif %}
+    
             problemList.appendChild(li);
         });
-
-        function startVote(problem) {
+    
+        // Fonction pour l'hôte pour sélectionner un problème à voter
+        function selectProblem(problem) {
             currentProblem = problem;
-            socket.emit("start_vote", {game_id: gameId, problem: problem});
-            startTimer();
+            socket.emit("select_problem", {game_id: gameId, problem: problem});
         }
-
-        function startTimer() {
+    
+        // Écouter l'événement pour mettre à jour le problème sélectionné
+        socket.on("problem_selected", (data) => {
+            currentProblem = data.problem;
+            alert(`L'hôte a choisi de voter pour le problème : ${data.problem}`);
+            startVoteTimer();
+        });
+    
+        function selectVote(vote) {
+            selectedVote = vote;
+        }
+    
+        function validateVote() {
+            if (selectedVote !== null) {
+                socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: selectedVote, pseudo: pseudo});
+                selectedVote = null;
+            } else {
+                alert("Veuillez sélectionner un vote avant de valider.");
+            }
+        }
+    
+        socket.on("vote_cast", (data) => {
+            const votesList = document.getElementById("votes-list");
+            const li = document.createElement("li");
+            li.textContent = `${data.player} a voté : ${data.vote}`;
+            votesList.appendChild(li);
+        });
+    
+        socket.on("vote_ended", (data) => {
+            const votesList = document.getElementById("votes-list");
+            votesList.innerHTML = "";
+            Object.keys(data.votes).forEach(player => {
+                const li = document.createElement("li");
+                li.textContent = `${player} a voté : ${data.votes[player]}`;
+                votesList.appendChild(li);
+            });
+            alert("Le vote est terminé.");
+        });
+    
+        // Timer de vote démarré lorsque le problème est sélectionné
+        function startVoteTimer() {
             let timeLeft = 60;
             const timerDisplay = document.getElementById("timer");
             timerDisplay.textContent = timeLeft;
@@ -123,38 +165,8 @@
                 }
             }, 1000);
         }
-
-        function selectVote(vote) {
-            selectedVote = vote;
-        }
-
-        function validateVote() {
-            if (selectedVote !== null) {
-                socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: selectedVote, pseudo: pseudo});
-                selectedVote = null;
-            } else {
-                alert("Veuillez sélectionner un vote avant de valider.");
-            }
-        }
-
-        socket.on("vote_cast", (data) => {
-            const votesList = document.getElementById("votes-list");
-            const li = document.createElement("li");
-            li.textContent = `${data.player} a voté : ${data.vote}`;
-            votesList.appendChild(li);
-        });
-
-        socket.on("vote_ended", (data) => {
-            const votesList = document.getElementById("votes-list");
-            votesList.innerHTML = "";
-            Object.keys(data.votes).forEach(player => {
-                const li = document.createElement("li");
-                li.textContent = `${player} a voté : ${data.votes[player]}`;
-                votesList.appendChild(li);
-            });
-            alert("Le vote est terminé.");
-        });
     </script>
+    
 
     <!-- Bouton pour lancer la partie (visible uniquement par l'hôte) -->
 {% if pseudo == host %}
