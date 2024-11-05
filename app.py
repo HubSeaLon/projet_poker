@@ -20,21 +20,6 @@ with app.app_context():
 
 
 
-
-def start_vote_timer(game_id, problem):
-    # Définir un minuteur de 60 secondes pour la période de vote
-    def timer_expired():
-        # Attribuer le vote "?" à ceux qui n'ont pas encore voté
-        for player in games[game_id]["players"]:
-            if player not in games[game_id]["votes"][problem]:
-                games[game_id]["votes"][problem][player] = "?"
-        # Notifier tous les joueurs de la fin du vote
-        emit("vote_ended", {"problem": problem, "votes": games[game_id]["votes"][problem]}, room=game_id)
-
-    # Lancer le minuteur de vote dans un thread
-    timer_thread = threading.Timer(60, timer_expired)
-    timer_thread.start()
-
 @app.route("/", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -99,11 +84,12 @@ def dashboard():
 
 @app.route("/start_game/<game_id>", methods=["POST"])
 def start_game(game_id):
-    # L'hôte démarre la partie, ce qui active l'interface de vote pour tous
     if session["pseudo"] == games[game_id]["host"]:
-        games[game_id]["status"] = "active"
-        socketio.emit("start_game", {"game_id": game_id}, room=game_id)
+        if games[game_id]["status"] != "active":  # Vérifie que la partie n'est pas déjà active
+            games[game_id]["status"] = "active"
+            socketio.emit("start_game", {"game_id": game_id}, room=game_id)
     return redirect(url_for("game_room", game_id=game_id))
+
 
 
 @socketio.on("start_game")
@@ -121,8 +107,6 @@ def handle_start_vote(data):
     problem = data["problem"]
     # Initialiser les votes pour ce problème
     games[game_id]["votes"][problem] = {}
-    # Lancer le minuteur de vote
-    start_vote_timer(game_id, problem)
     # Notifier tous les joueurs pour démarrer le vote
     emit("vote_started", {"problem": problem}, room=game_id)
 
@@ -133,23 +117,28 @@ def handle_cast_vote(data):
     vote = data["vote"]
     pseudo = data["pseudo"]
 
-    # Enregistrer le vote pour le joueur et le problème
+    # Enregistre le vote pour le joueur et le problème
     games[game_id]["votes"][problem][pseudo] = vote
 
-    # Notifier tous les joueurs du vote enregistré pour ce joueur
-    emit("vote_cast", {"player": pseudo, "vote": vote, "problem": problem}, room=game_id)
-
-    # Vérifier si tous les joueurs ont voté et si les votes sont unanimes
+    # Récupère tous les joueurs et leurs votes pour le problème actuel
     players = games[game_id]["players"]
     all_votes = [games[game_id]["votes"][problem].get(player) for player in players]
 
+    # Vérifie si tous les joueurs ont voté et si les votes sont unanimes
     if all(all_votes) and len(set(all_votes)) == 1:
-        # Si tous les votes sont unanimes, notifier tous les joueurs
-        unanimous_vote = all_votes[0]
+        unanimous_vote = all_votes[0]  # Tous les votes sont les mêmes
+
+        # Enregistre le vote unanime dans "concluded_votes"
+        if "concluded_votes" not in games[game_id]:
+            games[game_id]["concluded_votes"] = {}
+        games[game_id]["concluded_votes"][problem] = unanimous_vote
+
+        # Notifie tous les joueurs du vote unanime
         emit("unanimous_vote", {"problem": problem, "result": unanimous_vote}, room=game_id)
-    elif all(all_votes):
-        # Si tous les joueurs ont voté, notifier de la fin des votes sans unanimité
-        emit("vote_ended", {"problem": problem, "votes": games[game_id]["votes"][problem]}, room=game_id)
+    else:
+        # Met à jour les votes pour les autres joueurs
+        emit("update_votes", {"problem": problem, "votes": games[game_id]["votes"][problem]}, room=game_id)
+
 
 
 
@@ -169,7 +158,25 @@ def handle_join(data):
     game_id = data["game_id"]
     pseudo = data["pseudo"]
     join_room(game_id)
+
+    # Ajoute le joueur à la liste s'il n'est pas déjà dans la partie
+    if pseudo not in games[game_id]["players"]:
+        games[game_id]["players"].append(pseudo)
+    
+    # Prépare les données pour l'état de la partie
+    game_data = {
+        "status": games[game_id]["status"],
+        "current_problem": games[game_id].get("current_problem", None),
+        "problems": games[game_id]["problems"],
+        "votes": games[game_id]["votes"],
+        "concluded_votes": games[game_id].get("concluded_votes", {})  # Inclure les votes unanimes
+    }
+
+    # Envoie l'état actuel de la partie et les problèmes/votes au client
     emit("update_players", {"players": games[game_id]["players"], "host": games[game_id]["host"]}, room=game_id)
+    emit("game_state", game_data, room=request.sid)
+
+
 
 @socketio.on("add_problem")
 def handle_add_problem(data):
@@ -179,27 +186,6 @@ def handle_add_problem(data):
     games[game_id]["votes"][problem] = {}
     emit("new_problem", {"problem": problem}, room=game_id)
 
-@socketio.on("cast_vote")
-def handle_cast_vote(data):
-    game_id = data["game_id"]
-    problem = data["problem"]
-    vote = data["vote"]
-    pseudo = data["pseudo"]
-
-    # Enregistre le vote pour le joueur et le problème
-    games[game_id]["votes"][problem][pseudo] = vote
-
-    # Récupère tous les joueurs et leurs votes pour le problème actuel
-    players = games[game_id]["players"]
-    all_votes = [games[game_id]["votes"][problem].get(player) for player in players]
-
-    # Vérifie si tous les joueurs ont voté et si les votes sont unanimes
-    if all(all_votes) and len(set(all_votes)) == 1:
-        unanimous_vote = all_votes[0]  # Tous les votes sont les mêmes
-        emit("unanimous_vote", {"problem": problem, "result": unanimous_vote}, room=game_id)
-    else:
-        # Met à jour les votes pour les autres joueurs
-        emit("update_votes", {"problem": problem, "votes": games[game_id]["votes"][problem]}, room=game_id)
 
 @socketio.on("select_problem")
 def handle_select_problem(data):
