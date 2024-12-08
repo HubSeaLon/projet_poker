@@ -21,8 +21,18 @@
             <label for="game_mode">Choisissez le mode de jeu :</label>
             <select id="game_mode" name="game_mode">
                 <option value="strict">Mode de jeu strict (unanimité)</option>
-                <option value="average">Mode de jeu moyenne</option>
+                <option value="moyenne">Mode de jeu moyenne</option>
             </select>
+            <br>
+            <label for="nomber_player">Nombre de joueurs : </label>
+            <select id="number_player" name="number_player">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+            </select> 
+            <br>
             <button type="submit" name="create_game">Créer la Partie</button>
         </form>
     </section>
@@ -44,6 +54,5 @@
             <button type="submit" name="resume_game">Reprendre la Dernière Partie</button>
         </form>
     </section>
-
 </body>
 </html>
