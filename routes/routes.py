@@ -48,7 +48,14 @@ def login():
 def dashboard():
     if "pseudo" not in session:
         return redirect(url_for("signup"))
-
+    
+    game_routes = {
+                "strict": "game_room",
+                "moyenne": "game_room_2",
+                "mediane": "game_room_3",
+                "majorite_absolue": "game_room_4",
+                "majorite_relative": "game_room_5"
+            }
 
     if request.method == "POST":
         if "create_game" in request.form:
@@ -61,14 +68,15 @@ def dashboard():
                 "status": "waiting",
                 "problems": [],
                 "votes": {}
-                
             }
+
             session["game_id"] = game_id
-            if game_mode == "strict":
-                return redirect(url_for("game_room", game_id=game_id))
-            else:
-                return redirect(url_for("game_room_2", game_id=game_id))
-            
+    
+            # Obtenir la route correspondant au mode de jeu
+            route = game_routes.get(game_mode)
+
+            if route:
+                return redirect(url_for(route, game_id=game_id))
 
         elif "join_game" in request.form:
             game_id = request.form["game_id"]
@@ -81,40 +89,21 @@ def dashboard():
                 # Récupérer le mode de jeu de la partie
                 game_mode = games[game_id]["mode"]
 
-                # Rediriger vers la bonne salle en fonction du mode de jeu
-                if game_mode == "strict":
-                    return redirect(url_for("game_room", game_id=game_id))
-                else:
-                    return redirect(url_for("game_room_2", game_id=game_id))
+                route = game_routes.get(game_mode)
+
+                if route:
+                    return redirect(url_for(route, game_id=game_id))
+
             else:
                 error = "L'ID de partie n'existe pas."
                 return render_template("dashboard.html", pseudo=session["pseudo"], error=error)
-
+        
 
     return render_template("dashboard.html", pseudo=session["pseudo"])
 
 
 
 ## - Game Room - ##
-
-@app.route("/game_room/<game_id>")
-def game_room(game_id):
-    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
-        return redirect(url_for("dashboard"))
-
-    players = games[game_id]["players"]
-
-    return render_template("game_room.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
-
-@app.route("/game_room_2/<game_id>")
-def game_room_2(game_id):
-    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
-        return redirect(url_for("dashboard"))
-
-    players = games[game_id]["players"]
-
-    return render_template("game_room_2.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
-
 
 
 @socketio.on("start_game")
@@ -213,6 +202,17 @@ def handle_end_game(data):
         del games[game_id]
 
 
+## Unanimite 
+
+@app.route("/game_room/<game_id>")
+def game_room(game_id):
+    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
+        return redirect(url_for("dashboard"))
+
+    players = games[game_id]["players"]
+
+    return render_template("game_room.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
+
 @socketio.on("devoiler_vote")
 def devoiler_vote(data):
     game_id = data["game_id"]
@@ -251,6 +251,20 @@ def devoiler_vote(data):
             "votes": votes
         }, room=game_id)
 
+
+
+
+
+## Moyenne ##
+
+@app.route("/game_room_2/<game_id>")
+def game_room_2(game_id):
+    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
+        return redirect(url_for("dashboard"))
+
+    players = games[game_id]["players"]
+
+    return render_template("game_room_2.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
 
 @socketio.on("devoiler_vote_2")
 def devoiler_vote_2(data):
@@ -310,6 +324,274 @@ def devoiler_vote_2(data):
             socketio.emit("refresh_ui", room=game_id)
         else:
             emit("error", {"message": "Aucun vote enregistré pour le problème."}, room=request.sid)
+
+## Médiane ## 
+
+@app.route("/game_room_3/<game_id>")
+def game_room_3(game_id):
+    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
+        return redirect(url_for("dashboard"))
+
+    players = games[game_id]["players"]
+
+    return render_template("game_room_3.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
+
+
+
+@socketio.on("devoiler_vote_3")
+def devoiler_vote_3(data):
+    game_id = data["game_id"]
+    problem = data["problem"]
+    compteur = data["compteur"]
+
+    if game_id not in games or problem not in games[game_id]["votes"]:
+        emit("error", {"message": "Partie ou problème invalide."}, room=request.sid)
+        return
+    
+    # Récupérer les votes pour le problème en question
+    votes = games[game_id]["votes"].get(problem, {})
+    players = games[game_id]["players"]
+
+    if compteur == 1:
+        if len(set(votes.values())) == 1 and len(votes) == len(players):
+            # Si unanime, enregistrer le résultat et notifier les joueurs
+            unanimous_vote = list(votes.values())[0]
+            games[game_id].setdefault("concluded_votes", {})[problem] = unanimous_vote
+            games[game_id]["current_problem"] = None
+
+            # Émettre un événement de vote unanime
+            socketio.emit("unanimous_vote", {
+                "problem": problem,
+                "result": unanimous_vote,
+                "votes": votes
+            }, room=game_id)
+
+            # Rafraîchir automatiquement l'interface des joueurs
+            socketio.emit("refresh_ui", room=game_id)
+
+        else:
+            socketio.emit("revote", {
+                "problem": problem,
+                "message": f"Re votez pour le problème {problem}",
+                "votes": votes
+            }, room=game_id)
+    else:
+        # Calculer la médiane des votes et arrêter le vote
+        if votes:
+            # Récupérer les votes dans une liste triée
+            sorted_votes = sorted(votes.values())
+            num_votes = len(sorted_votes)
+            
+            # Calculer la médiane
+            if num_votes % 2 == 1:
+                # Nombre impair de votes
+                median_vote = sorted_votes[num_votes // 2]
+            else:
+                # Nombre pair de votes : moyenne des deux valeurs centrales
+                median_vote = (sorted_votes[num_votes // 2 - 1] + sorted_votes[num_votes // 2]) / 2
+            
+            # Enregistrer le résultat médian
+            games[game_id].setdefault("concluded_votes", {})[problem] = median_vote
+            games[game_id]["current_problem"] = None
+
+            # Émettre un événement avec le résultat de la médiane des votes
+            socketio.emit("median_vote", {
+                "problem": problem,
+                "median_result": median_vote,
+                "votes": votes
+            }, room=game_id)
+
+            # Rafraîchir automatiquement l'interface des joueurs
+            socketio.emit("refresh_ui", room=game_id)
+        else:
+            emit("error", {"message": "Aucun vote enregistré pour le problème."}, room=request.sid)
+
+
+
+## Majorité Absolue ## 
+
+@app.route("/game_room_4/<game_id>")
+def game_room_4(game_id):
+    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
+        return redirect(url_for("dashboard"))
+
+    players = games[game_id]["players"]
+
+    return render_template("game_room_4.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
+
+
+
+@socketio.on("devoiler_vote_4")
+def devoiler_vote_4(data):
+    game_id = data["game_id"]
+    problem = data["problem"]
+    compteur = data["compteur"]
+
+    if game_id not in games or problem not in games[game_id]["votes"]:
+        emit("error", {"message": "Partie ou problème invalide."}, room=request.sid)
+        return
+    
+    # Récupérer les votes pour le problème en question
+    votes = games[game_id]["votes"].get(problem, {})
+    players = games[game_id]["players"]
+
+    if compteur == 1:
+        if len(set(votes.values())) == 1 and len(votes) == len(players):
+            # Si unanime, enregistrer le résultat et notifier les joueurs
+            unanimous_vote = list(votes.values())[0]
+            games[game_id].setdefault("concluded_votes", {})[problem] = unanimous_vote
+            games[game_id]["current_problem"] = None
+
+            # Émettre un événement de vote unanime
+            socketio.emit("unanimous_vote", {
+                "problem": problem,
+                "result": unanimous_vote,
+                "votes": votes
+            }, room=game_id)
+
+            # Rafraîchir automatiquement l'interface des joueurs
+            socketio.emit("refresh_ui", room=game_id)
+
+        else:
+            socketio.emit("revote", {
+                "problem": problem,
+                "message": f"Re votez pour le problème {problem}",
+                "votes": votes
+            }, room=game_id)
+    else:
+        
+        # Calculer la majorité absolue des votes et arrêter le vote
+        if votes:
+            # Compter les occurrences de chaque vote
+            vote_counts = {}
+            for vote in votes.values():
+                vote_counts[vote] = vote_counts.get(vote, 0) + 1
+
+            # Déterminer si une valeur dépasse la moitié des votes
+            num_votes = len(votes)
+            majority_vote = None
+            for vote, count in vote_counts.items():
+                if count > num_votes / 2:
+                    majority_vote = vote
+                    break
+
+            if majority_vote is not None:
+                # Enregistrer le résultat de la majorité absolue
+                games[game_id].setdefault("concluded_votes", {})[problem] = majority_vote
+                games[game_id]["current_problem"] = None
+
+                # Émettre un événement avec le résultat de la majorité absolue
+                socketio.emit("majority_vote", {
+                    "problem": problem,
+                    "majority_result": majority_vote,
+                    "votes": votes
+                }, room=game_id)
+
+                # Rafraîchir automatiquement l'interface des joueurs
+                socketio.emit("refresh_ui", room=game_id)
+            else:
+                # Pas de majorité absolue, demander un nouveau vote
+                socketio.emit("revote", {
+                    "problem": problem,
+                    "votes": votes,
+                    "message": "Pas de majorité absolue. Veuillez revoter."
+                }, room=game_id)
+        else:
+            emit("error", {"message": "Aucun vote enregistré pour le problème."}, room=request.sid)
+
+
+
+## Majorité relative 
+
+@app.route("/game_room_5/<game_id>")
+def game_room_5(game_id):
+    if game_id not in games or session["pseudo"] not in games[game_id]["players"]:
+        return redirect(url_for("dashboard"))
+
+    players = games[game_id]["players"]
+
+    return render_template("game_room_5.html", game_id=game_id, pseudo=session["pseudo"], host=games[game_id]["host"])
+
+
+@socketio.on("devoiler_vote_5")
+def devoiler_vote_5(data):
+    game_id = data["game_id"]
+    problem = data["problem"]
+    compteur = data["compteur"]
+
+    if game_id not in games or problem not in games[game_id]["votes"]:
+        emit("error", {"message": "Partie ou problème invalide."}, room=request.sid)
+        return
+    
+    # Récupérer les votes pour le problème en question
+    votes = games[game_id]["votes"].get(problem, {})
+    players = games[game_id]["players"]
+
+    if compteur == 1:
+        if len(set(votes.values())) == 1 and len(votes) == len(players):
+            # Si unanime, enregistrer le résultat et notifier les joueurs
+            unanimous_vote = list(votes.values())[0]
+            games[game_id].setdefault("concluded_votes", {})[problem] = unanimous_vote
+            games[game_id]["current_problem"] = None
+
+            # Émettre un événement de vote unanime
+            socketio.emit("unanimous_vote", {
+                "problem": problem,
+                "result": unanimous_vote,
+                "votes": votes
+            }, room=game_id)
+
+            # Rafraîchir automatiquement l'interface des joueurs
+            socketio.emit("refresh_ui", room=game_id)
+
+        else:
+            socketio.emit("revote", {
+                "problem": problem,
+                "message": f"Re votez pour le problème {problem}",
+                "votes": votes
+            }, room=game_id)
+    else:
+        
+       # Calculer la majorité relative des votes et arrêter le vote
+        if votes:
+            # Compter les occurrences de chaque vote
+            vote_counts = {}
+            for vote in votes.values():
+                vote_counts[vote] = vote_counts.get(vote, 0) + 1
+
+            # Trouver le(s) vote(s) ayant le plus d'occurrences
+            max_votes = max(vote_counts.values())
+            majority_candidates = [vote for vote, count in vote_counts.items() if count == max_votes]
+
+            # Vérifier s'il y a une majorité claire ou une égalité
+            if len(majority_candidates) == 1:
+                # Une seule option a la majorité relative
+                majority_vote = majority_candidates[0]
+
+                # Enregistrer le résultat de la majorité relative
+                games[game_id].setdefault("concluded_votes", {})[problem] = majority_vote
+                games[game_id]["current_problem"] = None
+
+                # Émettre un événement avec le résultat de la majorité relative
+                socketio.emit("relative_majority_vote", {
+                    "problem": problem,
+                    "majority_result": majority_vote,
+                    "votes": votes
+                }, room=game_id)
+
+                # Rafraîchir automatiquement l'interface des joueurs
+                socketio.emit("refresh_ui", room=game_id)
+            else:
+                # Pas de majorité relative (égalité entre plusieurs options)
+                socketio.emit("revote", {
+                    "problem": problem,
+                    "votes": votes,
+                    "message": "Pas de majorité relative. Veuillez revoter."
+                }, room=game_id)
+        else:
+            # Aucun vote enregistré pour le problème
+            emit("error", {"message": "Aucun vote enregistré pour le problème."}, room=request.sid)
+
 
 
 

@@ -402,22 +402,6 @@ socket.on("error", (data) => {
     alert(data.message);
 });
 
-
-// socket.on("average_vote", (data) => {
-//     const problemElement = document.getElementById(`result-${data.problem}`);
-//     problemElement.innerHTML = `Moyenne : ${data.average_result}`;
-
-//     // Affiche les votes des joueurs
-//     let votesMessage = "<br><strong>Votes :</strong><br>";
-//     for (const [player, vote] of Object.entries(data.votes)) {
-//         votesMessage += `${player} : ${vote}<br>`;
-//     }
-//     problemElement.innerHTML += votesMessage;
-
-//     // Désactiver les options de vote car la moyenne a été calculée
-//     document.getElementById("vote-options").style.display = "none";
-// });
-
 socket.on("average_vote", (data) => {
     displayAverageVote(data.problem, data.average_result);
 
