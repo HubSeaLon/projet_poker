@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tableau de Bord</title>
+</head>
+<body>
+    <h1>Bienvenue, {{ pseudo }} !</h1>
+
+    <h2>Menu</h2>
+
+    <!-- Affiche un message d'erreur si l'ID de partie est incorrect -->
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+
+    <!-- Section pour créer une partie -->
+    <section>
+        <h3>Créer une Partie</h3>
+        <form method="POST" action="/dashboard">
+            <label for="game_mode">Choisissez le mode de jeu :</label>
+            <select id="game_mode" name="game_mode">
+                <option value="strict">Mode de jeu strict (unanimité)</option>
+                <option value="moyenne">Mode de jeu moyenne</option>
+                <option value="mediane">Mode de jeu médiane</option>
+                <option value="majorite_absolue">Mode de jeu majorité absolue</option>
+                <option value="majorite_relative">Mode de jeu majorité relative</option>
+            </select>
+            <br>
+            <label for="nomber_player">Nombre de joueurs : </label>
+            <select id="number_player" name="number_player">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+            </select> 
+            <br>
+            <button type="submit" name="create_game">Créer la Partie</button>
+        </form>
+    </section>
+
+    <!-- Section pour rejoindre une partie -->
+    <section>
+        <h3>Rejoindre une Partie</h3>
+        <form method="POST" action="/dashboard">
+            <label for="game_id">ID de la Partie :</label>
+            <input type="text" id="game_id" name="game_id" required>
+            <button type="submit" name="join_game">Rejoindre</button>
+        </form>
+    </section>
+
+    <!-- Section pour reprendre une partie -->
+    <section>
+        <h3>Reprendre une Partie</h3>
+        <form method="POST" action="/dashboard">
+            <button type="submit" name="resume_game">Reprendre la Dernière Partie</button>
+        </form>
+    </section>
+</body>
+</html>

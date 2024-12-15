@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Planning Poker - Salle de Jeu</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+</head>
+<body>
+    
+    <h1>Mode de Jeu : {{ mode_label }}</h1>
+       
+    
+
+    <section>
+        <h3>ID de la Partie :</h3>
+        <p>{{ game_id }}</p>
+            <h3>Charger un Backlog (JSON)</h3>
+    <form id="upload-backlog-form">
+        <input type="file" id="backlog-file" accept=".json" />
+        <button type="button" onclick="uploadBacklog()">Charger Backlog</button>
+    </form>
+    </section>
+
+    <section>
+        <h3>Joueurs dans la Partie</h3>
+        <ul id="players-list">
+            {% for player in players %}
+                <li>{{ player }}{% if player == host %} (host){% endif %}</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <!-- Section de vote visible une fois la partie lancée -->
+    <section id="game-section" style="display: none;">
+        <h3>Problèmes</h3>
+        <ul id="problems-list"></ul>
+        <button onclick="addProblem()">+ Ajouter un problème</button>
+
+        <!-- Options de vote -->
+        <h3 id="problem">Voter pour le problème sélectionné : 
+        </h3>
+        <div id="vote-options">
+            <button onclick="castVote(0)">0</button>
+            <button onclick="castVote(1)">1</button>
+            <button onclick="castVote(2)">2</button>
+            <button onclick="castVote(3)">3</button>
+            <button onclick="castVote(5)">5</button>
+            <button onclick="castVote(8)">8</button>
+            <button onclick="castVote(13)">13</button>
+            <button onclick="castVote(20)">20</button>
+            <button onclick="castVote(40)">40</button>
+            <button onclick="castVote(100)">100</button>
+            <button onclick="castVote('?')">?</button>
+            <button onclick="castVote('cafe')">Café</button>
+            {% if pseudo == host %}
+            <button onclick="devoilerVote()">Dévoiler vote</button>
+            {% endif %}
+        </div>
+        
+        {% if pseudo == host %}
+        <br>
+        <section>
+            <button id="end-game-button" onclick="endGame()">Terminer la partie</button>
+        </section>
+        {% endif %}
+
+        <section>
+            <button id="download-results" onclick="downloadResults()">Enregistrer les résultats</button>
+        </section>
+    </section>
+
+    <!-- Bouton pour lancer la partie (visible uniquement par l'hôte) -->
+    {% if pseudo == host %}
+    <section>
+        <button id="start-game-button" onclick="startGame()">Lancer la Partie</button>
+    </section>
+    {% endif %}
+
+
+    <script>
+        const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+        const gameId = "{{ game_id }}";
+        const pseudo = "{{ pseudo }}";
+        let currentProblem = "";  // Variable pour stocker le problème actuellement voté
+        let compteur = 1;
+
+        // Rejoindre la salle de la partie et obtenir l'état actuel de la partie
+        socket.emit("join_room", {game_id: gameId, pseudo: pseudo});
+    
+        
+        // Mettre à jour la liste des joueurs et vérifier l'état de la partie au chargement
+        socket.on("game_state", (data) => {
+            if (data.status === "active") {
+                document.getElementById("game-section").style.display = "block";  // Affiche la section de vote
+                
+                // Masquer le bouton "Lancer la Partie" si la partie est déjà active
+                const startButton = document.getElementById("start-game-button");
+                if (startButton) {
+                    startButton.style.display = "none";
+                }
+            }
+
+           
+            // Restaurer le problème sélectionné et le résultat unanime s'il existe
+            if (data.current_problem) {
+                currentProblem = data.current_problem;
+                const problemElement = document.getElementById("problem");
+                problemElement.innerHTML = `Voter pour le problème sélectionné : ${currentProblem}`;
+
+                if (data.concluded_votes && data.concluded_votes[currentProblem]) {
+                let resultMessage = "";
+                const result = data.concluded_votes[currentProblem].result;
+
+                resultMessage = ` - Résultat : ${result}`;
+                problemElement.innerHTML += resultMessage;
+                }
+
+
+            }
+            
+            // Restaurer les problèmes et votes
+            const problemList = document.getElementById("problems-list");
+            problemList.innerHTML = "";  // Réinitialiser la liste des problèmes
+            data.problems.forEach(problem => {
+                addProblemToUI(problem);  // Fonction pour afficher chaque problème dans l'interface
+            });
+
+                      
+            // Affiche les votes pour chaque problème
+            for (let problem in data.votes) {
+                for (let player in data.votes[problem]) {
+                    displayVote(problem, player, data.votes[problem][player]);
+                }
+            }
+
+            // Affiche les votes unanimes
+            for (let problem in data.concluded_votes) {
+                displayUnanimousVote(problem, data.concluded_votes[problem]);
+            }
+        });
+    
+        // Fonction pour ajouter un problème à l'interface utilisateur
+        function addProblemToUI(problem) {
+            const problemList = document.getElementById("problems-list");
+            const li = document.createElement("li");
+            li.textContent = problem;
+
+            // Ajouter un bouton "Voter pour ce problème" uniquement pour l'hôte
+            {% if pseudo == host %}
+            const voteButton = document.createElement("button");            
+            voteButton.textContent = "Voter pour ce problème";
+            voteButton.id = `vote-btn-${encodeURIComponent(problem)}`;  // Ajout de l'ID unique
+            voteButton.onclick = () => selectProblem(problem);
+            li.appendChild(voteButton);
+            {% endif %}
+
+            // Ajouter un élément pour afficher le résultat
+            const resultSpan = document.createElement("span");
+            resultSpan.id = `result-${encodeURIComponent(problem)}`;
+            resultSpan.style.marginLeft = "10px";
+
+            li.appendChild(resultSpan);
+            problemList.appendChild(li);
+        }
+
+
+
+        // Fonction pour afficher un vote unanime pour un problème
+        function displayUnanimousVote(problem, result) {
+            const resultSpan = document.getElementById(`result-${problem}`);
+            if (resultSpan) {
+                resultSpan.textContent = `Résultat: ${result}`;
+            }
+        }
+    
+        // Fonction pour afficher un vote pour un problème
+        function displayVote(problem, player, vote) {
+            const problemVotesList = document.getElementById(`result-${problem}`);
+            let voteDisplay = document.getElementById(`vote-${player}-${problem}`);
+
+            // Crée ou met à jour le vote du joueur
+            if (!voteDisplay) {
+                voteDisplay = document.createElement("span");
+                voteDisplay.id = `vote-${player}-${problem}`;
+                problemVotesList.appendChild(voteDisplay);
+            }
+            votes = "Votes : ";
+            votes += (`${player} : ? | `);
+            voteDisplay.textContent = votes;
+        }
+
+        // Fonction pour afficher les votes d'un problème 
+        function displayVotes(problem, votes) {
+            const problemVotesList = document.getElementById(`result-${problem}`);
+            let formattedVotes = "Votes : ";
+
+            // Concaténer chaque joueur et son vote dans une chaîne de caractères lisible
+            formattedVotes += Object.entries(votes)
+                .map(([player, vote]) => `${player} : ?`)
+                .join(" | ");
+
+            problemVotesList.textContent = formattedVotes;
+        }
+
+    
+        // Fonction pour démarrer la partie
+        function startGame() {
+            socket.emit("start_game", {game_id: gameId});
+            document.getElementById("start-game-button").style.display = "none";  // Masquer le bouton
+        }
+    
+        // Afficher la section de vote lorsque la partie commence et masquer le bouton "Lancer la Partie"
+        socket.on("start_game", () => {
+            document.getElementById("game-section").style.display = "block";
+            const startButton = document.getElementById("start-game-button");
+            if (startButton) {
+                startButton.style.display = "none";  // Masquer le bouton si la partie est déjà lancée
+            }
+        });
+    
+        function addProblem() {
+            const problem = prompt("Entrez un nouveau problème :");
+            if (problem) {
+                socket.emit("add_problem", {game_id: gameId, problem: problem});
+            }
+        }
+    
+        socket.on("new_problem", (data) => {
+            addProblemToUI(data.problem);  // Ajoute le problème à l'interface
+        });
+    
+        // Fonction pour l'hôte pour sélectionner un problème à voter
+        function selectProblem(problem) {
+            currentProblem = problem;
+            socket.emit("select_problem", {game_id: gameId, problem: problem});
+        }   
+
+        // Fonction pour l'hôte pour dévoiler les votes du problème a voter quand tout le monde a voté
+        function devoilerVote() {
+            if (!currentProblem) {
+                alert("Aucun problème sélectionné pour dévoiler les votes.");
+                return;
+            }
+
+            socket.emit("devoiler_vote", {game_id: gameId, problem: currentProblem, compteur: compteur });
+            // Augmenter le compteur après le dévoilement
+            compteur += 1;
+        }
+
+
+
+    
+        // Notifie tous les joueurs du problème sélectionné
+        socket.on("problem_selected", (data) => {
+            currentProblem = data.problem;
+            const problemElement = document.getElementById("problem");
+            problemElement.innerHTML = `Voter pour le problème sélectionné : ${data.problem}`;
+
+            // Si le problème est déjà conclu avec un vote unanime, masquer les options de vote
+            if (data.problem in concludedVotes) {
+                document.getElementById("button").style.display = "none";
+                document.getElementById("vote-options").style.display = "none";
+            } else {
+                document.getElementById("vote-options").style.display = "block";
+            }
+        });
+
+     
+        // Fonction pour soumettre un vote pour le problème sélectionné
+        function castVote(vote) {
+            if (!currentProblem) {
+                alert("Aucun problème sélectionné pour le vote.");
+                return;
+            }
+            socket.emit("cast_vote", {game_id: gameId, problem: currentProblem, vote: vote, pseudo: pseudo});
+        }
+    
+        // Affiche chaque vote en temps réel et remplace le vote précédent du joueur
+        socket.on("vote_cast", (data) => {
+            displayVote(data.problem, data.player, data.vote);
+        });
+    
+           // Mise à jour des votes (non unanimes)
+        socket.on("update_votes", (data) => {
+            const problemVotesList = document.getElementById(`result-${data.problem}`);
+            let formattedVotes = "Votes en cours : ";
+
+            // Affiche "?" pour masquer les votes
+            formattedVotes += Object.keys(data.votes)
+                .map(player => `${player} : ?`)
+                .join(" | ");
+
+            problemVotesList.textContent = formattedVotes;
+        });
+
+
+     
+    
+       
+        socket.on("revote", (data) => {
+            const problemElement = document.getElementById("problem");
+            let message = `${data.message}<br><strong>Anciens votes :</strong><br>`;
+
+            // Afficher les anciens votes
+            for (const [player, vote] of Object.entries(data.votes)) {
+                message += `${player} : ${vote}<br>`;
+            }
+
+            problemElement.innerHTML = message;
+
+            // Réactiver les options de vote
+            document.getElementById("vote-options").style.display = "block";
+        });
+
+        // Écouter l'événement `unanimous_vote` pour mettre à jour l'interface
+        socket.on("unanimous_vote", (data) => {
+            const problemElement = document.getElementById("problem");
+            let message = `Résultat unanime pour "${data.problem}" : ${data.result}<br><strong>Votes :</strong><br>`;
+
+            // Afficher les votes des joueurs
+            for (const [player, vote] of Object.entries(data.votes)) {
+                message += `${player} : ${vote}<br>`;
+            }
+
+            problemElement.innerHTML = message;
+
+            // Désactiver les options de vote
+            document.getElementById("vote-options").style.display = "none";
+        });
+
+        socket.on("update_players", (data) => {
+            const playersList = document.getElementById("players-list");
+            playersList.innerHTML = "";
+            data.players.forEach(player => {
+                const li = document.createElement("li");
+                li.textContent = player;
+                if (player === data.host) {
+                    li.textContent += " (host)";
+                }
+                playersList.appendChild(li);
+            });
+        });
+
+        socket.on("refresh_ui", () => {
+            // Demande l'état actuel de la partie pour actualiser l'affichage
+            socket.emit("join_room", {game_id: gameId, pseudo: pseudo});
+            location.reload();
+        });
+
+        socket.on("hide_vote_button", (data) => {
+            const problemId = data.problem;
+            const voteButton = document.getElementById(`vote-btn-${encodeURIComponent(problemId)}`);
+            if (voteButton) {
+                voteButton.style.display = "none";  // Masque le bouton de vote pour ce problème
+            }
+        });
+
+
+
+
+
+        function endGame() {
+            if (confirm("Êtes-vous sûr de vouloir terminer la partie ?")) {
+                socket.emit("end_game", { game_id: gameId });
+            }
+        }
+
+        socket.on("game_ended", (data) => {
+            alert(data.message);
+            // Optionnel : rediriger vers le tableau de bord ou une autre page
+            window.location.href = "/dashboard";
+        });
+
+        socket.on("error", (data) => {
+            alert(data.message);
+        });
+
+
+        socket.on("average_vote", (data) => {
+            const problemElement = document.getElementById(`result-${data.problem}`);
+            problemElement.innerHTML = `Moyenne : ${data.average}`;
+
+            // Affiche les votes des joueurs
+            let votesMessage = "<br><strong>Votes :</strong><br>";
+            for (const [player, vote] of Object.entries(data.votes)) {
+                votesMessage += `${player} : ${vote}<br>`;
+            }
+            problemElement.innerHTML += votesMessage;
+        });
+
+
+        function uploadBacklog() {
+            const fileInput = document.getElementById("backlog-file");
+            const file = fileInput.files[0];
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (event) {
+                    const backlog = JSON.parse(event.target.result);
+                    socket.emit("upload_backlog", { game_id: gameId, backlog: backlog });
+                };
+                reader.readAsText(file);
+            } else {
+                alert("Veuillez sélectionner un fichier JSON.");
+            }
+        }
+
+        socket.on("backlog_uploaded", (data) => {
+            console.log("Backlog chargé :", data.backlog);
+        });
+
+        function downloadResults() {
+            socket.emit("save_results", { game_id: gameId });
+        }
+
+        socket.on("results_saved", (data) => {
+            alert(`Résultats sauvegardés dans ${data.file_name}`);
+        });
+
+        function loadGame() {
+            const fileName = prompt("Entrez le nom du fichier JSON à charger :");
+            if (fileName) {
+                socket.emit("load_game", { file_name: fileName });
+            }
+        }
+
+
+        socket.on("game_loaded", (data) => {
+            console.log("Partie chargée :", data);
+
+            // Mettre à jour l'interface utilisateur avec les problèmes et résultats
+            const problemsList = document.getElementById("problems-list");
+            problemsList.innerHTML = "";  // Réinitialiser la liste des problèmes
+
+            data.problems.forEach(problem => {
+                const li = document.createElement("li");
+                li.textContent = problem;
+
+                // Ajouter la difficulté associée si elle existe
+                if (data.results[problem] !== undefined) {
+                    li.textContent += ` - Difficulté estimée : ${data.results[problem]}`;
+                }
+
+                problemsList.appendChild(li);
+            });
+
+            alert("Partie chargée avec succès !");
+        });
+
+
+
+    </script>
+
+
+
+    
+
+    
+</body>
+</html>
+
+
+
+
+  

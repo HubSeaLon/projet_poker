@@ -1,0 +1,29 @@
+# Fichiers et dossiers Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environnement virtuel
+venv/
+
+# Fichiers sensibles ou temporaires
+instance/
+*.db
+
+# Déploiement Heroku
+*.log
+*.pid
+
+# Fichiers de configuration spécifiques
+*.env
+
+# Fichiers spécifiques à l'éditeur
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db
+6731_resultats.json
+routes/__pycache__/
+models/__pycache__/
